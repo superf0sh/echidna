@@ -41,6 +41,10 @@ executables:
     main: Main.hs
     source-dirs: src/
     dependencies: echidna
+  echidna-explorer:
+    main: Explorer.hs
+    source-dirs: examples/explorer
+    dependencies: echidna
   revert-example-exe:
     main: Revert.hs
     source-dirs: examples/revert

@@ -5,6 +5,8 @@ module Echidna.Exec (
   , cleanUp
   , eCommand
   , ePropertySeq
+  , ePropertyGen
+  , printCallSeq
   , execCall
   , fuzz
   , module Echidna.Internal.Runner
@@ -18,6 +20,7 @@ import Data.List                  (intercalate)
 import Data.Maybe                 (listToMaybe)
 import Data.Text                  (Text)
 import Data.Vector                (fromList)
+import Data.Functor.Identity      (Identity(..))
 
 import Hedgehog
 import Hedgehog.Gen               (sample, sequential)
@@ -89,12 +92,22 @@ ePropertySeq :: VM             -- Initial state
              -> (VM -> Bool)   -- Predicate to fuzz for violations of
              -> Int            -- Max actions to execute
              -> Property
+
 ePropertySeq v ts p n = mapConfig (\x -> x {propertyTestLimit = 10000}) . property $
-  executeSequential (VMState v) =<< forAllWith printCallSeq
-  (sequential (linear 1 n) (VMState v) [eCommand ts p]) where
-    printCallSeq = ("Call sequence: " ++) . intercalate "\n               " .
+  (executeSequential (VMState v) =<< forAllWith printCallSeq (ePropertyGen v ts p n ))
+
+ePropertyGen :: VM
+             -> [SolSignature]
+             -> (VM -> Bool)
+             -> Int
+             -> (GenT Identity (Sequential (PropertyT IO) VMState))
+
+ePropertyGen v ts p n = sequential (linear 1 n) (VMState v) [eCommand ts p]
+
+printCallSeq :: Sequential t1 t -> [Char]
+printCallSeq = ("Call sequence: " ++) . intercalate "\n               " .
       map showCall . sequentialActions
-    showCall (Action i _ _ _ _ _) = show i ++ ";"
+    where showCall (Action i _ _ _ _ _) = show i ++ ";"
 
 -- Should work, but missing instance MonadBaseControl b m => MonadBaseControl b (PropertyT m)
 -- ePropertyPar :: VM                  -- Initial state

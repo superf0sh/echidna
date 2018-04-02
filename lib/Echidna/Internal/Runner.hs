@@ -9,7 +9,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 module Echidna.Internal.Runner (
-    checkParallel
+    checkParallel,
+    runProperty,
+    printWith
   ) where
 
 import           Control.Concurrent.STM (TVar, atomically)
@@ -31,7 +33,8 @@ import           Data.Semigroup (Semigroup(..))
 import           Hedgehog.Internal.Config
 import           Hedgehog.Internal.Discovery (Pos(..), Position(..))
 import qualified Hedgehog.Internal.Discovery as Discovery
-import           Hedgehog.Internal.Gen (runDiscardEffect, runGenT)
+import           Hedgehog.Internal.Gen ( lift, runDiscardEffect, runGenT, renderNodes)
+--import           Hedgehog.Internal.Gen ()
 import           Hedgehog.Internal.Property
   (Failure(..), Group(..), GroupName(..), Property(..), PropertyT(..),
     PropertyConfig(..), PropertyName(..), ShrinkLimit(..), ShrinkRetries(..),
@@ -46,6 +49,7 @@ import           Hedgehog.Internal.Seed (Seed)
 import qualified Hedgehog.Internal.Seed as Seed
 import           Hedgehog.Internal.Show
 import           Hedgehog.Internal.Source
+import           Hedgehog.Internal.State (Action (..), sequentialActions)
 import           Hedgehog.Internal.Tree (Node(..), Tree(..), runTree)
 import           Hedgehog.Range (Size)
 
@@ -56,7 +60,8 @@ import           System.Directory (makeRelativeToCurrentDirectory)
 
 import           Text.PrettyPrint.Annotated.WL (Doc, (<+>))
 import qualified Text.PrettyPrint.Annotated.WL as WL
-
+import           Data.Functor.Identity (runIdentity)
+import           Data.Maybe (maybe)
 checkParallel :: MonadIO m => Group -> m Bool
 checkParallel =
   checkGroup
@@ -181,6 +186,22 @@ checkRegion region mcolor name size seed prop =
 
     pure result
 
+runProperty prop seed size = 
+        case Seed.split seed of
+          (s0, _) -> do
+            n@(Node x _) <-
+              runTree . runDiscardEffect $ runGenT size s0 . runTestT $ unPropertyT (propertyTest prop) 
+            case x of
+              Just (Right _, _) -> return True
+              Just (Left _, _)  -> return False
+              _                -> return False
+
+printWith f size seed gen =
+    let
+      render size seed = fmap (maybe "<discard>" f) . runDiscardEffect . runGenT size seed . lift
+      Node x ss = runIdentity . runTree $ render size seed gen
+      in x
+
 checkReport ::
      forall m.
      MonadIO m
@@ -230,8 +251,8 @@ checkReport cfg size0 seed0 test0 updateUI =
                       size
                       seed
                       0
-                      (propertyShrinkLimit cfg)
-                      (propertyShrinkRetries cfg)
+                      (0)
+                      (0)
                       (updateUI . mkReport)
                       node
 
