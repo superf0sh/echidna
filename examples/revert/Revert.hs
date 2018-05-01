@@ -1,6 +1,7 @@
 module Main where
 
 import Data.Text                  (Text)
+import Control.Monad.Reader       (runReaderT)
 import Control.Monad.State.Strict (evalState)
 import Hedgehog hiding            (checkParallel)
 import Hedgehog.Internal.Property (GroupName(..), PropertyName(..))
@@ -11,7 +12,7 @@ import Echidna.Exec
 import Echidna.Solidity
 
 main :: IO ()
-main = do (v,a,ts) <- loadSolidity "solidity/revert.sol" Nothing Nothing
+main = do (v,a,ts) <- runReaderT (loadSolidity "solidity/revert.sol") $ SolConfig Nothing Nothing
           let prop t = (PropertyName $ show t, ePropertySeq (`checkRTest` t) a v 10)
           _ <- checkParallel . Group (GroupName "revert.sol") $ map prop ts
           return ()

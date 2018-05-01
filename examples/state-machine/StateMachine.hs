@@ -2,12 +2,13 @@
 
 module Main where
 
+import Control.Monad.Reader       (runReaderT)
 import Control.Monad.State.Strict (MonadState, evalStateT)
 import Data.List (isSuffixOf)
 import System.Directory (getDirectoryContents)
 
 import Echidna.Exec (execCall)
-import Echidna.Solidity (loadSolidity)
+import Echidna.Solidity (loadSolidity, SolConfig(..))
 
 import EVM (VM, VMResult(..))
 import EVM.ABI (AbiValue(..), encodeAbiValue)
@@ -74,7 +75,7 @@ prop_turnstile v = property $ do
 
 check_turnstile :: FilePath -> FilePath -> IO Bool
 check_turnstile dir fp = do putStrLn ("Checking " ++ fp ++ "...")
-                            (v,_,_) <- loadSolidity (dir ++ "/" ++ fp) Nothing Nothing
+                            (v,_,_) <- runReaderT (loadSolidity (dir ++ "/" ++ fp)) $ SolConfig Nothing Nothing
                             check (prop_turnstile v)
 
 main :: IO ()

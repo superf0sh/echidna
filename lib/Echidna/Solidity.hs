@@ -1,20 +1,30 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase, TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
-module Echidna.Solidity where
+module Echidna.Solidity ( EchidnaException
+                        , SolConfig(..)
+                        , loadSolidity
+                        , readContract
+                        , solcOpts
+                        , whichContract
+                        ) where
 
-import Control.Lens               ((^.), assign, view)
+import Control.Lens               ((^.), assign, makeLenses, view)
 import Control.Exception          (Exception)
 import Control.Monad              (liftM2)
 import Control.Monad.Catch        (MonadThrow(..))
 import Control.Monad.IO.Class     (MonadIO(..))
+import Control.Monad.Reader       (MonadReader(..))
 import Control.Monad.State.Strict (execState, runState)
-import Data.Foldable              (toList)
+import Data.Foldable              (concat, toList)
 import Data.List                  (find, partition)
 import Data.Map                   ()
-import Data.Maybe                 (isNothing, fromMaybe)
+import Data.Maybe                 (isNothing)
 import Data.Monoid                ((<>))
-import Data.Text                  (Text, isPrefixOf, unpack)
+import Data.Text                  (Text, isPrefixOf)
 import System.Process             (readProcess)
 import System.IO.Temp             (writeSystemTempFile)
 
@@ -39,26 +49,27 @@ instance Show EchidnaException where
 
 instance Exception EchidnaException
 
--- | parses additional solc arguments
-solcArguments :: FilePath -> Maybe Text -> [String]
-solcArguments filePath argStr = args <> fromMaybe [] additional
-  where args = ["--combined-json=bin-runtime,bin,srcmap,srcmap-runtime,abi,ast", filePath]
-        additional = words . unpack <$> argStr
+data SolConfig = SolConfig { _whichContract :: Maybe Text
+                           , _solcOpts      :: Maybe String
+                           }
+makeLenses ''SolConfig
 
 -- | reads all contracts within the solidity file at `filepath` and passes optional solc params to compiler
-readContracts :: (MonadIO m, MonadThrow m) => FilePath -> Maybe Text -> m [SolcContract]
+readContracts :: (MonadIO m, MonadThrow m) => FilePath -> Maybe String -> m [SolcContract]
 readContracts filePath solcArgs = liftIO solc >>= \case
   Nothing -> throwM CompileFailure
   Just m  -> return $ toList $ fst m
-  where solc = readSolc =<< writeSystemTempFile "" =<< readProcess
-          "solc" (solcArguments filePath solcArgs) ""
+  where solc = readSolc =<< writeSystemTempFile "" 
+               =<< readProcess "solc" (args <> (concat $ words <$> solcArgs)) ""
+        args = ["--combined-json=bin-runtime,bin,srcmap,srcmap-runtime,abi,ast", filePath]
 
 -- | reads either the first contract found or the contract named `selectedContractName` within the solidity file at `filepath`
-readContract :: (MonadIO m, MonadThrow m) => FilePath -> Maybe Text -> Maybe Text -> m SolcContract
-readContract filePath selectedContractName solcArgs = do
-    cs <- readContracts filePath solcArgs
-    c <- chooseContract cs selectedContractName
-    warn (isNothing selectedContractName && 1 < length cs) $
+readContract :: (MonadIO m, MonadReader SolConfig m, MonadThrow m) => FilePath -> m SolcContract
+readContract filePath = do
+    SolConfig which args <- ask
+    cs <- readContracts filePath args
+    c <- chooseContract cs which
+    warn (isNothing which && 1 < length cs) $
       "Multiple contracts found in file, only analyzing the first"
     liftIO $ print $ "Analyzing contract: " <> c ^. contractName
     return c
@@ -72,9 +83,9 @@ readContract filePath selectedContractName solcArgs = do
         warn p s = if p then liftIO $ print s else pure ()
 
 -- | loads the solidity file at `filePath` and selects either the default or specified contract to analyze
-loadSolidity :: (MonadIO m, MonadThrow m) => FilePath -> Maybe Text -> Maybe Text -> m (VM, [SolSignature], [Text])
-loadSolidity filePath selectedContract solcArgs = do
-    c <- readContract filePath selectedContract solcArgs
+loadSolidity :: (MonadIO m, MonadReader SolConfig m, MonadThrow m) => FilePath -> m (VM, [SolSignature], [Text])
+loadSolidity filePath = do
+    c <- readContract filePath
     let (VMSuccess (B bc), vm) = runState exec . vmForEthrunCreation $ c ^. creationCode
         load = do resetState
                   assign (state . gas) 0xffffffffffffffff

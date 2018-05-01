@@ -4,6 +4,7 @@
 module Main where
 
 import Control.Concurrent.MVar (takeMVar, newMVar)
+import Control.Monad.Reader    (runReaderT)
 import Data.MultiSet           (distinctSize)
 import Data.Text               (pack)
 import Data.Semigroup          ((<>))
@@ -42,7 +43,7 @@ opts = info (options <**> helper)
 main :: IO ()
 main = do
   (Options f c s) <- execParser opts
-  (v,a,ts) <- loadSolidity f (pack <$> c) (pack <$> s)
+  (v,a,ts) <- runReaderT (loadSolidity f) $ SolConfig (pack <$> c) s
   r        <- newMVar (mempty :: Coverage)
   let prop t = (PropertyName $ show t
                , ePropertySeqCoverage r (flip checkETest t) a v 10
