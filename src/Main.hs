@@ -7,9 +7,12 @@ import Control.Concurrent.MVar (newMVar, readMVar, swapMVar)
 import Control.Monad           (forM, replicateM_)
 import Control.Monad.IO.Class  (liftIO)
 import Control.Monad.Reader    (runReaderT)
+--import Data.Aeson              (encode)
+--import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.List               (foldl')
 import Data.Set                (size, unions)
 import Data.Text               (pack)
+--import Data.Text.Lazy          (unpack)
 import Data.Semigroup          ((<>))
 
 import Echidna.Config
@@ -84,5 +87,6 @@ main = do
         checkParallel . Group (GroupName file) =<< mapM prop xs
         
       ls <- liftIO $ mapM (readMVar . snd) tests
+      --liftIO $ putStrLn $ unpack (decodeUtf8 (encode (map (map snd) ls)))
       let l = size $ foldl' (\acc xs -> unions (acc : map snd xs)) mempty ls
       liftIO $ putStrLn $ "Coverage: " ++ show l ++ " unique PCs"

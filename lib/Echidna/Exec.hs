@@ -55,7 +55,8 @@ import Echidna.Internal.Runner
 --------------------------------------------------------------------
 -- COVERAGE HANDLING
 
-type CoverageInfo = (SolCall, Set Int)
+type Coverage = Set (Int,Int)
+type CoverageInfo = (SolCall, Coverage)
 type CoverageRef  = IORef CoverageInfo
 
 getCover :: [CoverageInfo] -> IO [SolCall]
@@ -64,7 +65,7 @@ getCover xs = setCover vs empty totalCoverage []
   where vs = V.fromList xs
         totalCoverage = size $ foldl' (\acc (_,c) -> union acc c) empty xs
 
-setCover :: V.Vector CoverageInfo -> Set Int -> Int -> [SolCall] -> IO [SolCall]
+setCover :: V.Vector CoverageInfo -> Coverage -> Int -> [SolCall] -> IO [SolCall]
 setCover vs cov tot calls = do
     let i = maxIndexBy (\a b -> comparing (size . union cov) (snd a) (snd b)) vs
         s = vs V.! i
@@ -102,7 +103,9 @@ execCallCoverage sol = execCallUsing (go empty) sol where
                  return x
     _      -> do current <- use $ state . pc
                  S.state (runState exec1)
-                 go $ insert current c
+                 next    <- use $ state . pc
+                 go $ insert (current,next) c
+  
 
 -------------------------------------------------------------------
 -- Fuzzing and Hedgehog Init
@@ -153,7 +156,7 @@ eCommandUsing gen ex p = Command (\_ -> pure $ Call <$> gen) ex
   [ Ensure $ \_ (VMState v) _ _ -> assert $ p v
   , Update $ \(VMState v) (Call c) _ -> VMState $ execState (execCall c) v
   ]
-  
+
 
 eCommand :: (MonadGen n, MonadTest m) => n SolCall -> (VM -> Bool) -> Command n m VMState
 eCommand = flip eCommandUsing (\ _ -> pure ())
