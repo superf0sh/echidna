@@ -13,7 +13,7 @@ import GHC.Generics
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Yaml as Y
 
-import EVM.Types (W256)
+import EVM.Types (Addr, W256)
 
 import Echidna.Property
 
@@ -23,12 +23,27 @@ data Config = Config
   , _testLimit :: Int
   , _returnType :: PropertyType
   , _range :: Int
-  , _gasLimit :: W256 }
+  , _gasLimit :: W256 
+  , _contractAddr :: Addr
+  , _sender       :: Addr
+  , _addrList     :: Maybe [Addr] }
   deriving (Show, Generic)
 
 makeLenses ''Config
 
 instance FromJSON Config
+
+------------------------------------
+-- Defaults
+
+defaultContractAddr :: Addr
+defaultContractAddr = 0x00a329c0648769a73afac7f9381e08fb43dbea72
+
+otherContractAddr :: Addr
+otherContractAddr = 0x67518339e369ab3d591d3569ab0a0d83b2ff5198
+
+defaultSender :: Addr
+defaultSender = 0x00a329c0648769a73afac7f9381e08fb43dbea70
 
 defaultConfig :: Config
 defaultConfig = Config
@@ -37,10 +52,17 @@ defaultConfig = Config
   , _returnType = ShouldReturnTrue
   , _testLimit = 10000
   , _range = 10
-  , _gasLimit = 0xffffffffffffffff }
+  , _gasLimit = 0xffffffffffffffff 
+  , _contractAddr = defaultContractAddr
+  , _sender       = defaultSender
+  , _addrList     = Just [defaultContractAddr, otherContractAddr, 0x0] }
 
 withDefaultConfig :: ReaderT Config m a -> m a
 withDefaultConfig = (flip runReaderT) defaultConfig
+
+
+------------------------------------
+-- Parser
 
 data ParseException = ParseException FilePath
 

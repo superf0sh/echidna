@@ -40,7 +40,7 @@ import qualified Data.Vector.Mutable as M
 import qualified Data.Vector as V
 
 import Hedgehog
-import Hedgehog.Gen               (choice, sample, sequential)
+import Hedgehog.Gen               (sample, sequential)
 import Hedgehog.Internal.State    (Action(..))
 import Hedgehog.Internal.Property (PropertyConfig(..), mapConfig)
 import Hedgehog.Range             (linear)
@@ -111,14 +111,15 @@ execCallCoverage sol = execCallUsing (go empty) sol where
 -- Fuzzing and Hedgehog Init
 
 fuzz :: MonadIO m
-     => Int                 -- Call sequence length
+     => Config              -- Echidna configuration
+     -> Int                 -- Call sequence length
      -> Int                 -- Number of iterations
      -> [SolSignature]      -- Type signatures to call
      -> VM                  -- Initial state
      -> (VM -> m Bool)      -- Predicate to fuzz for violations of
      -> m (Maybe [SolCall]) -- Call sequence to violate predicate (if found)
-fuzz l n ts v p = do
-  callseqs <- replicateM n (replicateM l . sample $ genInteractions ts)
+fuzz c l n ts v p = do
+  callseqs <- replicateM n (replicateM l . sample $ (genInteractions ts c))
   results <- zip callseqs <$> mapM run callseqs
   return $ listToMaybe [cs | (cs, passed) <- results, not passed]
     where run cs = p $ execState (forM_ cs execCall) v
@@ -176,10 +177,10 @@ eCommand = flip eCommandUsing (\ _ -> pure ())
 
 
 eCommandCoverage :: (MonadGen n, MonadTest m, MonadState VM m, MonadReader CoverageRef m, MonadIO m)
-                 => [SolCall] -> (VM -> Bool) -> [SolSignature] -> [Command n m VMState]
-eCommandCoverage cov p ts = case cov of
-  [] -> [eCommandUsing (genInteractions ts) (\(Call c) -> execCallCoverage c) p]
-  xs -> map (\x -> eCommandUsing (choice [mutateCall x, genInteractions ts])
+                 => [SolCall] -> (VM -> Bool) -> [SolSignature] -> Config -> [Command n m VMState]
+eCommandCoverage cov p ts conf = case cov of
+  [] -> [eCommandUsing (genInteractions ts conf) (\(Call c) -> execCallCoverage c) p]
+  xs -> map (\x -> eCommandUsing (mutateCall conf x)
               (\(Call c) -> execCallCoverage c) p) xs
 
 ePropertyUsing :: (MonadCatch m, MonadTest m, MonadReader Config n)
@@ -202,7 +203,7 @@ ePropertySeq :: (MonadReader Config m)
              -> [SolSignature] -- Type signatures to fuzz
              -> VM             -- Initial state
              -> m Property
-ePropertySeq p ts = ePropertyUsing [eCommand (genInteractions ts) p] id             
+ePropertySeq p ts vm = ask >>= \c -> ePropertyUsing [eCommand (genInteractions ts c) p] id vm
 
 
 ePropertySeqCoverage :: (MonadReader Config m)
@@ -212,7 +213,7 @@ ePropertySeqCoverage :: (MonadReader Config m)
                      -> [SolSignature]
                      -> VM
                      -> m Property
-ePropertySeqCoverage calls cov p ts v = ePropertyUsing (eCommandCoverage calls p ts) writeCoverage v 
+ePropertySeqCoverage calls cov p ts v = ask >>= \c -> ePropertyUsing (eCommandCoverage calls p ts c) writeCoverage v 
   where writeCoverage :: MonadIO m => ReaderT CoverageRef (StateT VM m) a -> m a
         writeCoverage m = do
           threadCovRef <- liftIO $ newIORef mempty
