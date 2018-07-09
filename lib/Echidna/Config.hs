@@ -55,7 +55,7 @@ defaultConfig = Config
   , _gasLimit = 0xffffffffffffffff 
   , _contractAddr = defaultContractAddr
   , _sender       = defaultSender
-  , _addrList     = Just [defaultContractAddr, otherContractAddr, 0x0] }
+  , _addrList     = Just [defaultContractAddr, defaultSender, otherContractAddr, 0x0] }
 
 withDefaultConfig :: ReaderT Config m a -> m a
 withDefaultConfig = (flip runReaderT) defaultConfig
